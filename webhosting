@@ -1,0 +1,239 @@
+#################################Using openssl ############
+Root CA Certificate
+
+Generate root CA private key:
+
+openssl genpkey -algorithm RSA -out root.key
+
+Generate root CA Certificate Signing Request (CSR):
+
+openssl req -new -key root.key -out root.csr
+
+Self-sign the Root CA certificate:
+
+openssl x509 -req -in root.csr -signkey root.key -out root.crt
+-days 3650
+
+View the file in a readable format:
+
+openssl x509 -in root.crt -text -noout
+
+nano sub.ext
+
+basicConstraints=critical,CA:TRUE,pathlen:0
+
+keyUsage=critical,keyCertSign,cRLSign
+
+subjectKeyIdentifier=hash
+
+authorityKeyIdentifier=keyid,issuer
+
+Sub CA Certificate
+
+Generate sub CA private key:
+
+openssl genpkey -algorithm RSA -out sub.key
+
+Generate sub CA Certificate Signing Request (CSR):
+
+openssl req -new -key sub.key -out sub.csr
+
+Sign the sub CA CSR with Root CA:
+
+openssl x509 -req -in sub.csr -CA root.crt -CAkey root.key
+-CAcreateserial -out sub.crt -days 1825 -ext sub.ext
+
+View the file in a readable format:
+
+openssl x509 -in sub.crt -text -noout
+
+nano server.ext
+
+basicConstraints=CA:FALSE
+
+keyUsage = digitalSignature, keyEncipherment
+
+extendedKeyUsage = serverAuth
+
+subjectAltName = @alt_names
+
+[alt_names]
+
+DNS.1 = cdac.ac.in
+
+Issue Digital Certificates from Sub CA
+
+Generate some server’s private key:
+
+openssl genpkey -algorithm RSA -out server.key
+
+Generate CSR for an end entity (e.g. some server):
+
+openssl req -new -key server.key -out server.csr
+
+Sign the CSR Sith sub CA:
+
+openssl x509 -req -in server.csr -CA sub.crt -CAkey sub.key
+-CAcreateserial -out server.crt -days 365 -ext server.ext
+
+View the file in a readable format:
+
+openssl x509 -in server.crt -text -noout
+
+Common name: Give as
+cdac.ac.in
+
+Create a Full Chain
+
+cat
+server.crt
+sub.crt
+>
+fullchain.crt
+
+Install Apache, Allow Firewall Access, and
+Enable SSL Module
+
+sudo apt update
+
+sudo apt install apache2
+
+sudo systemctl status apache2
+
+sudo ufw allow 'Apache'
+
+sudo a2enmod ssl
+
+Create SSL Configuration file:
+/etc/apache2/sites-available/server.conf
+
+<VirtualHost *:443>
+
+ServerName
+cdac.ac.in
+
+DocumentRoot
+/var/www/server
+
+SSLEngine on
+
+SSLCertificateFile
+/home/atul/testxca/fullchain.crt
+
+SSLCertificateKeyFile
+/home/atul/testxca/server.key
+
+</VirtualHost>
+
+Set Server Name in /etc/apache2/apache2.conf
+
+Add this line to the end of the file:
+
+ServerName
+cdac.ac.in
+
+Create Document Root Directory and Give
+Apache Permission to Read
+
+sudo mkdir -p /var/www/server
+
+sudo chown -R www-data:www-data /var/www/server
+
+sudo nano /etc/hosts
+
+Add this entry at the end:
+
+127.0.0.1 cdac.ac.in
+
+Enable the Site and Restart Apache
+
+sudo a2ensite server.conf
+
+sudo systemctl restart apache2
+
+Change Apache Home Page
+
+sudo
+nano
+/var/www/server/index.html
+
+Welcome to DITISS
+
+Test in Browser
+
+Start Firefox
+
+Settings → Privacy & Security → Certificates → View Certificates
+
+Authorities → Import
+
+Select root.crt
+
+Enable: Trust this CA to identify websites
+
+Servers -> Add Exception
+
+Location: https://cdac.ac.in -> Get certificate -> Check box against
+Permanently store this exception -> Confirm Security Exception
+
+sudo cp root.crt
+/usr/local/share/ca-certificates/rootca.crt
+
+sudo update-ca-certificates
+
+Try cdac.ac.in
+
+If needed, verify certificate chain
+
+openssl s_client -connect cdac.ac.in:443 -showcerts
+
+
+
+
+
+############################################by XCA###########################################
+
+sudo apt update && sudo apt install apache2 -y
+
+# Enable Apache and SSL
+sudo systemctl enable --now apache2
+sudo a2enmod ssl
+
+# Create website directory
+sudo mkdir -p /var/www/server
+sudo chown -R www-data:www-data /var/www/server
+
+# Create webpage
+echo '<h1>Pritee is Always Here</h1>' | sudo tee /var/www/server/index.html
+
+# Add hostname mapping
+echo "127.0.0.1 utkarsha.in" | sudo tee -a /etc/hosts
+
+# Create Virtual Host
+sudo tee /etc/apache2/sites-available/server.conf > /dev/null <<EOF
+<VirtualHost *:443>
+    ServerName utkarsha.in
+    DocumentRoot /var/www/server
+
+    SSLEngine on
+    SSLCertificateFile /home/ditiss/Downloads/utkarsha.in.crt
+    SSLCertificateKeyFile /home/ditiss/Downloads/UTKARSHA.IN.pem
+    SSLCACertificateFile /home/ditiss/Downloads/rootCA.crt
+</VirtualHost>
+EOF
+
+# Enable site and restart Apache
+sudo a2ensite server.conf && sudo apachectl configtest && sudo systemctl restart apache2
+
+# Verify
+systemctl status apache2
+sudo vim /etc/apache2/sites-available/server.conf
+sudo vim /etc/apache2/apache2.conf
+
+sudo vim /etc/apache2/ports.conf
+sudo vim /etc/hosts
+
+sudo vim /var/www/server/index.html
+sudo apachectl configtest
+sudo systemctl restart apache2
+sudo a2dissite server.conf
