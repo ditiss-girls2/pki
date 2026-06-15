@@ -1,0 +1,44 @@
+Q.2) Setup a certificate authority server using openssl and xca or openssl method
+User certificate for hosting website (https://www.ditissacts014.local)
+Import it client browser to remove the self signed cert warning.
+
+
+sudo apt update
+sudo apt install xca apache2 -y
+xca
+sudo a2enmod ssl
+sudo mkdir -p /var/www/html
+echo "<h1>DITISS HTTPS Website</h1>" | sudo tee /var/www/html/index.html
+sudo nano /etc/apache2/sites-available/ditiss.conf
+sudo a2ensite ditiss.conf
+sudo apachectl configtest
+sudo systemctl restart apache2
+sudo systemctl status apache2
+sudo nano /etc/hosts
+openssl x509 -in ditissacts014.local.crt -text -noout
+openssl verify -CAfile rootCA.crt ditissacts014.local.crt
+sudo apachectl -S
+curl -k https://www.ditissacts014.local
+sudo cp rootCA.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+
+/etc/apache2/sites-available/ditiss.conf
+
+<VirtualHost *:443>
+ServerName www.ditissacts014.local
+DocumentRoot /var/www/html
+SSLEngine on
+SSLCertificateFile /home/$USER/Downloads/ditissacts014.local.crt
+SSLCertificateKeyFile /home/$USER/Downloads/ditissacts014.local.pem
+SSLCACertificateFile /home/$USER/Downloads/rootCA.crt
+</VirtualHost>
+
+
+/etc/hosts
+
+127.0.0.1 localhost
+127.0.0.1 www.ditissacts014.local
+127.0.0.1 ditissacts014.local
+
+
+
