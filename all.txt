@@ -1,0 +1,533 @@
+### Openssl hashing (create a hash of file)
+
+# Symmetric Encryption ----->
+openssl enc -aes-256-cbc -salt -in file.txt -out file.enc
+openssl enc -aes-256-cbc -d -in file.enc -out decrypted.txt
+
+# Asymmetric Encryption ----->
+openssl genrsa -out private.key 2048
+openssl rsa -in private.key -pubout -out public.key
+
+openssl pkeyutl -encrypt -pubin -inkey public.key -in file.txt -out encrypted.bin
+openssl pkeyutl -decrypt -inkey private.key -in encrypted.bin -out decrypted.txt
+
+# Hashing ----->
+openssl dgst -sha256 file.txt
+
+openssl dgst -sha256 file.txt > hash.txt
+
+# SHA-256 Hash
+openssl dgst -sha256 file.txt
+
+# SHA-1 Hash
+openssl dgst -sha1 file.txt
+
+# MD5 Hash
+openssl dgst -md5 file.txt
+
+# SHA-512 Hash
+openssl dgst -sha512 file.txt
+
+# Hash save in file 
+openssl dgst -sha256 file.txt > hash.txt
+
+# only show hash value
+openssl dgst -sha256 -r file.txt
+
+# Multiple files  hash
+openssl dgst -sha256 file1.txt file2.txt file3.txt
+
+--------------------------------------------------------------------
+
+openssl without bind 
+
+
+# PHASE 1 - ROOT CA
+
+
+mkdir rootca
+cd rootca
+mkdir certs csr private
+
+openssl genrsa -out private/rootCA11.key 4096
+
+openssl req -x509 -new \
+-key private/rootCA11.key \
+-sha256 \
+-days 3650 \
+-out certs/rootCA11.crt
+
+openssl x509 -in certs/rootCA11.crt -text -noout
+
+
+# 
+# PHASE 2 - SUB CA
+# 
+
+cd ..
+mkdir subca
+cd subca
+mkdir certs csr private
+
+openssl genrsa -out private/subCA11.key 4096
+
+openssl req -new \
+-key private/subCA11.key \
+-out csr/subCA11.csr
+
+nano subca_ext.cnf
+
+# Paste below:
+# basicConstraints=critical,CA:TRUE,pathlen:0
+# keyUsage=critical,keyCertSign,cRLSign
+# subjectKeyIdentifier=hash
+# authorityKeyIdentifier=keyid,issuer
+
+openssl x509 -req \
+-in csr/subCA11.csr \
+-CA ../rootca/certs/rootCA11.crt \
+-CAkey ../rootca/private/rootCA11.key \
+-CAcreateserial \
+-out certs/subCA11.crt \
+-days 1825 \
+-sha256 \
+-extfile subca_ext.cnf
+
+openssl verify \
+-CAfile ../rootca/certs/rootCA11.crt \
+certs/subCA11.crt
+
+
+# 
+# PHASE 3 - WEBSITE CERTIFICATE
+# 
+
+cd ..
+mkdir website
+cd website
+mkdir certs csr private
+
+openssl genrsa -out private/boomshakalaka.key 2048
+
+openssl req -new \
+-key private/boomshakalaka.key \
+-out csr/boomshakalaka.csr
+
+nano server_ext.cnf
+
+# Paste below:
+# basicConstraints=critical,CA:FALSE
+# keyUsage=critical,digitalSignature,nonRepudiation,keyEncipherment,keyAgreement
+# extendedKeyUsage=serverAuth,clientAuth,emailProtection
+# subjectAltName=@alt_names
+#
+# [alt_names]
+# DNS.1=www.boomshakalaka.in
+
+openssl x509 -req \
+-in csr/boomshakalaka.csr \
+-CA ../subca/certs/subCA11.crt \
+-CAkey ../subca/private/subCA11.key \
+-CAcreateserial \
+-out certs/boomshakalaka.crt \
+-days 365 \
+-sha256 \
+-extfile server_ext.cnf
+
+openssl x509 -in certs/boomshakalaka.crt -text -noout
+
+
+# 
+# PHASE 4 - FULL CHAIN
+# 
+
+cat certs/boomshakalaka.crt \
+../subca/certs/subCA11.crt \
+../rootca/certs/rootCA11.crt \
+> certs/fullchain.crt
+
+openssl verify \
+-CAfile ../rootca/certs/rootCA11.crt \
+-untrusted ../subca/certs/subCA11.crt \
+certs/boomshakalaka.crt
+
+
+# 
+# PHASE 5 - APACHE INSTALL
+# 
+
+sudo apt update
+sudo apt install apache2 -y
+
+sudo mkdir -p /var/www/boomshakalaka
+
+sudo nano /var/www/boomshakalaka/index.html
+
+# Paste:
+# <html>
+# <body>
+# <h1>BoomShakalaka SSL Working</h1>
+# </body>
+# </html>
+
+
+# 
+# PHASE 6 - SSL FILES
+# 
+
+sudo mkdir -p /etc/apache2/ssl
+
+sudo cp private/boomshakalaka.key \
+/etc/apache2/ssl/
+
+sudo cp certs/fullchain.crt \
+/etc/apache2/ssl/
+
+
+# 
+# PHASE 7 - ENABLE SSL
+# 
+
+sudo a2enmod ssl
+
+
+# 
+# PHASE 8 - HTTPS VHOST
+# 
+
+sudo nano /etc/apache2/sites-available/boomshakalaka-ssl.conf
+
+# Paste:
+
+# <VirtualHost *:443>
+#
+# ServerName www.boomshakalaka.in
+#
+# DocumentRoot /var/www/boomshakalaka
+#
+# SSLEngine on
+#
+# SSLCertificateFile /etc/apache2/ssl/fullchain.crt
+#
+# SSLCertificateKeyFile /etc/apache2/ssl/boomshakalaka.key
+#
+# </VirtualHost>
+
+
+# 
+# PHASE 9 - ENABLE SITE
+# 
+
+sudo a2ensite boomshakalaka-ssl
+
+sudo apachectl configtest
+
+sudo systemctl restart apache2
+
+
+# 
+# PHASE 10 - LOCAL HOST RESOLUTION
+# 
+
+sudo nano /etc/hosts
+
+# Add:
+# 127.0.0.1    www.boomshakalaka.in
+
+
+# 
+# PHASE 11 - TEST
+# 
+
+curl -vk https://www.boomshakalaka.in
+
+openssl s_client \
+-connect www.boomshakalaka.in:443 \
+-showcerts
+
+# Open browser:
+# https://www.boomshakalaka.in
+
+
+$$$$ XCA HTTPS WEBSITE USING ROOT CA → SUB CA → END ENTITY ------
+
+1) ROOT CA CREATE
+-----------------
+XCA → Private Keys → New Key
+Algorithm: RSA
+Key Size: 4096
+
+Certificates → New Certificate
+
+Source:
+  Create Self-Signed Certificate
+
+Subject:
+  CN = RootCA
+
+Extensions:
+  Basic Constraints = CA:TRUE
+  Key Usage = Certificate Sign, CRL Sign
+
+Save as RootCA
+
+------------------------------------------------------------
+
+2) SUB CA CREATE
+----------------
+Private Keys → New Key
+RSA 4096
+
+Certificates → New Certificate
+
+Source:
+  Signer = RootCA
+
+Subject:
+  CN = SubCA
+
+Extensions:
+  Basic Constraints = CA:TRUE
+  Key Usage = Certificate Sign, CRL Sign
+
+Save as SubCA
+
+------------------------------------------------------------
+
+3) END ENTITY / SERVER CERTIFICATE
+----------------------------------
+Private Keys → New Key
+RSA 2048
+
+Certificates → New Certificate
+
+Source:
+  Signer = SubCA
+
+Subject:
+  CN = localhost
+  (or server IP / hostname)
+
+Extensions:
+  Basic Constraints = CA:FALSE
+  Key Usage = Digital Signature, Key Encipherment
+  Extended Key Usage = Server Authentication
+
+Save as ServerCert
+
+------------------------------------------------------------
+
+4) EXPORT FILES
+---------------
+RootCA      → rootca.crt
+SubCA       → subca.crt
+ServerCert  → server.crt
+Server Key  → server.key
+
+------------------------------------------------------------
+
+5) APACHE INSTALL
+-----------------
+sudo apt update
+sudo apt install apache2 -y
+sudo a2enmod ssl
+
+------------------------------------------------------------
+
+6) CREATE WEBSITE
+-----------------
+sudo nano /var/www/html/index.html
+
+Example:
+
+<html>
+<head>
+<title>Secure Website</title>
+</head>
+<body>
+<h1>HTTPS Website using XCA Certificates</h1>
+</body>
+</html>
+
+------------------------------------------------------------
+
+7) COPY CERTIFICATES
+--------------------
+sudo mkdir /etc/apache2/certs
+
+Copy:
+server.crt
+server.key
+subca.crt
+
+to
+
+/etc/apache2/certs
+
+------------------------------------------------------------
+
+8) CONFIGURE SSL
+----------------
+sudo nano /etc/apache2/sites-available/default-ssl.conf
+
+Inside VirtualHost add:
+
+SSLEngine on
+
+SSLCertificateFile /etc/apache2/certs/server.crt
+
+SSLCertificateKeyFile /etc/apache2/certs/server.key
+
+SSLCertificateChainFile /etc/apache2/certs/subca.crt
+
+------------------------------------------------------------
+
+9) ENABLE HTTPS
+---------------
+sudo a2ensite default-ssl
+sudo systemctl restart apache2
+
+------------------------------------------------------------
+
+10) IMPORT ROOT CA IN BROWSER
+-----------------------------
+Browser → Settings → Certificates
+
+Import:
+
+rootca.crt
+
+as Trusted Root Certification Authority
+
+Do NOT import:
+subca.crt
+server.crt
+
+------------------------------------------------------------
+
+11) OPEN WEBSITE
+----------------
+https://localhost
+
+or
+
+https://SERVER-IP
+
+------------------------------------------------------------
+
+FIREWALL -RULE
+
+sudo ufw enable
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw reload
+sudo ufw status
+
+--------------------------------------------------
+
+# Create folders
+
+mkdir -p ~/bank/acct1
+cd ~/bank
+
+
+
+# RSA Encrypt / Decrypt
+``````````````````````````
+
+# Bank key pair
+openssl genpkey -algorithm RSA -out bank_pri.pem
+openssl rsa -pubout -in bank_pri.pem -out bank_pub.pem
+
+# Account1 key pair
+cd acct1
+
+openssl genpkey -algorithm RSA -out acct1_pri.pem
+openssl rsa -pubout -in acct1_pri.pem -out acct1_pub.pem
+
+echo "Hello Bank" > msg.txt
+
+# Encrypt using Bank Public Key
+openssl pkeyutl -encrypt -pubin -inkey ../bank_pub.pem -in msg.txt -out msg.enc
+
+mv msg.enc ../
+
+cd ..
+
+# Decrypt using Bank Private Key
+openssl pkeyutl -decrypt -inkey bank_pri.pem -in msg.enc -out msg.txt
+
+cat msg.txt
+
+
+
+# RSA Sign and Verify
+``````````````````````
+
+openssl genpkey -algorithm RSA -out pri.pem
+openssl rsa -pubout -in pri.pem -out pub.pem
+
+echo "Digital Signature Test" > file1.txt
+
+openssl dgst -sha256 -sign pri.pem -out file1.txt.sha256.sig file1.txt
+
+openssl dgst -sha256 -verify pub.pem -signature file1.txt.sha256.sig file1.txt
+
+
+
+# Root CA
+``````````````
+
+mkdir -p ~/PKI/rootCA
+cd ~/PKI/rootCA
+
+openssl genpkey -algorithm RSA -out root.key
+
+openssl req -new -key root.key -out root.csr
+
+openssl x509 -req -in root.csr -signkey root.key -out root.crt -days 3650
+
+openssl x509 -in root.crt -text -noout
+
+
+# Sub CA
+`````````
+
+
+mkdir ../subCA
+cd ../subCA
+
+openssl genpkey -algorithm RSA -out sub.key
+
+openssl req -new -key sub.key -out sub.csr
+
+openssl x509 -req -in sub.csr \
+-CA ../rootCA/root.crt \
+-CAkey ../rootCA/root.key \
+-CAcreateserial \
+-out sub.crt \
+-days 1825
+
+openssl x509 -in sub.crt -text -noout
+
+
+# End Entity / Server Certificate
+````````````````````````````````
+
+
+mkdir ../server
+cd ../server
+
+openssl genpkey -algorithm RSA -out server.key
+
+openssl req -new -key server.key -out server.csr
+
+openssl x509 -req -in server.csr \
+-CA ../subCA/sub.crt \
+-CAkey ../subCA/sub.key \
+-CAcreateserial \
+-out server.crt \
+-days 365
+
+openssl x509 -in server.crt -text -noout
+
